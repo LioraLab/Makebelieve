@@ -1,0 +1,9 @@
+node_modules/
+.omx/
+.codex/
+.agents/
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
