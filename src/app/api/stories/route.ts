@@ -20,13 +20,30 @@ function fileNameFromUrl(photoUrl: string, fallbackIndex: number) {
   return `photo-${fallbackIndex + 1}.jpg`;
 }
 
-export async function POST(req: NextRequest) {
+function resolveActor(req: NextRequest) {
+  const auth = req.headers.get('authorization');
+  if (auth?.startsWith('Bearer user:')) {
+    const userId = auth.slice('Bearer user:'.length).trim();
+    if (userId) {
+      return { type: 'user', userId, guestSessionId: null };
+    }
+  }
+
   const guestSessionId = getGuestSessionId(req);
+  if (!guestSessionId) {
+    return null;
+  }
+
+  return { type: 'guest', userId: null, guestSessionId };
+}
+
+export async function POST(req: NextRequest) {
+  const actor = resolveActor(req);
 
   try {
     const body = parseBody(createStorySchema, await req.json());
 
-    if (!guestSessionId && !req.headers.get('authorization')) {
+    if (!actor) {
       return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
     }
 
@@ -35,8 +52,8 @@ export async function POST(req: NextRequest) {
     const { data: storyData, error: storyError } = await supabase
       .from('stories')
       .insert({
-        user_id: null,
-        guest_session_id: guestSessionId,
+        user_id: actor.type === 'user' ? actor.userId : null,
+        guest_session_id: actor.type === 'guest' ? actor.guestSessionId : null,
         child_name: body.childName,
         age_band: body.ageBand ?? null,
         theme: body.theme,
@@ -97,6 +114,45 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
-  return failJson('UNAUTHORIZED', 'Story listing endpoint requires explicit route-level implementation', 404);
+export async function GET(req: NextRequest) {
+  const actor = resolveActor(req);
+  if (!actor) {
+    return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
+  }
+
+  try {
+    const supabase = getServiceSupabaseClient();
+    let query = supabase
+      .from('stories')
+      .select(`
+        id,
+        child_name,
+        age_band,
+        theme,
+        tone,
+        language,
+        payment_status,
+        fulfillment_status,
+        created_at,
+        status,
+        assets(id, storage_bucket, storage_path, file_name, content_type, kind, is_locked, is_preview, updated_at),
+        orders(id, status, is_active_paid, amount_cents, currency, created_at)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (actor.type === 'user') {
+      query = query.eq('user_id', actor.userId);
+    } else {
+      query = query.eq('guest_session_id', actor.guestSessionId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      return failJson('INTERNAL_ERROR', error.message, 500);
+    }
+
+    return okJson({ stories: data ?? [] });
+  } catch {
+    return failJson('INTERNAL_ERROR', 'Unexpected server error', 500);
+  }
 }
