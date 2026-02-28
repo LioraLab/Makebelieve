@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint 'src/app/api/**/*.{ts,tsx}'"
+    "lint": "eslint 'src/app/**/*.{ts,tsx}'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

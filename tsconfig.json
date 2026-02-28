@@ -16,9 +16,14 @@
   },
   "include": [
     "src/app/api/**/*.ts",
+    "src/app/create/**/*",
+    "src/app/preview/**/*",
     "src/lib/api/**/*.ts",
     "src/lib/auth.ts",
     "src/lib/supabase/admin.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
