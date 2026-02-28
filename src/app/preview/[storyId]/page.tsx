@@ -105,6 +105,7 @@ export default function PreviewPage() {
   const [assets, setAssets] = useState<PreviewPayload['assets']>([]);
   const [isLoading, setLoading] = useState(true);
   const [isRequesting, setRequesting] = useState(false);
+  const [isCheckout, setIsCheckout] = useState(false);
   const [error, setError] = useState('');
 
   const canUsePolling = useMemo(() => {
@@ -164,6 +165,40 @@ export default function PreviewPage() {
       setRequesting(false);
     }
   }, [isRequesting, storyId]);
+
+  const openCheckout = useCallback(async () => {
+    if (!storyId || typeof storyId !== 'string') {
+      setError('유효하지 않은 스토리 ID입니다.');
+      return;
+    }
+
+    if (story?.payment_status === 'paid') {
+      setError('이미 결제가 완료되어 잠금이 해제되었습니다.');
+      return;
+    }
+
+    setIsCheckout(true);
+    try {
+      const response = await callJson<{ checkoutUrl: string }>(`/api/paddle/checkout`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ storyId, plan: 'digital' }),
+      });
+
+      if (!response.ok) {
+        setError(response.error.message);
+        return;
+      }
+
+      window.location.href = response.data.checkoutUrl;
+    } catch {
+      setError('결제 URL 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsCheckout(false);
+    }
+  }, [story?.payment_status, storyId]);
 
   useEffect(() => {
     let alive = true;
@@ -264,9 +299,24 @@ export default function PreviewPage() {
                 }}
               >
                 <h3 style={{ marginTop: 0 }}>🔒 결제 잠금(placeholder)</h3>
-                <p style={{ marginBottom: 12 }}>전체 동화와 PDF는 결제 후에 열립니다. 현재는 결제 플로우가 준비 단계라 잠금 상태입니다.</p>
-                <button type="button" disabled style={{ border: 'none', padding: '10px 14px', borderRadius: 8, background: '#f97316', color: '#fff' }}>
-                  결제 후 잠금 해제 예정
+                <p style={{ marginBottom: 12 }}>
+                  전체 동화와 PDF는 결제 후에 열립니다. 결제를 진행해 주세요.
+                </p>
+                <button
+                  type="button"
+                  disabled={isCheckout}
+                  onClick={() => {
+                    void openCheckout();
+                  }}
+                  style={{
+                    border: 'none',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: '#f97316',
+                    color: '#fff',
+                  }}
+                >
+                  {isCheckout ? '결제 진행 중...' : '결제하고 전체 보기'}
                 </button>
               </div>
             ) : (
