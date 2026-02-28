@@ -3,6 +3,7 @@ import { type NextRequest } from 'next/server';
 
 import { failJson, okJson } from '../../../../lib/api/response';
 import { getServiceSupabaseClient } from '../../../../lib/supabase/admin';
+import { sendOperationalAlert } from '../../../../lib/api/alerts';
 
 type ActorRecord = Record<string, unknown>;
 
@@ -461,6 +462,19 @@ export async function POST(req: NextRequest) {
       return failJson('INTERNAL_ERROR', storyUpdateError.message, 500);
     }
   }
+
+  await sendOperationalAlert({
+    kind: `paddle.${eventType}`,
+    severity: eventKind === 'paid' ? 'info' : 'warning',
+    title: `Processed paddle webhook ${eventType}`,
+    message: `Processed Paddle webhook ${eventType} for story ${resolvedStoryId ?? 'unknown'}`,
+    details: {
+      eventKind,
+      actor: req.method,
+      storyId: resolvedStoryId,
+      orderId: orderRow.id,
+    },
+  });
 
   await supabase.from('audit_events').insert({
     story_id: resolvedStoryId,

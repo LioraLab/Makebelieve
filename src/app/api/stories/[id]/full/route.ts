@@ -2,6 +2,7 @@ import { type NextRequest } from 'next/server';
 
 import { getServiceSupabaseClient } from '../../../../../lib/supabase/admin';
 import { failJson, okJson } from '../../../../../lib/api/response';
+import { assessBudgetBreaker } from '../../../../../lib/api/abuse';
 import { getGuestSessionId } from '../../../../../lib/api/request';
 
 const UUID_RE =
@@ -99,6 +100,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (!story) {
       return failJson('NOT_FOUND', 'Story not found', 404);
+    }
+
+    const { count: queuedFullJobs } = await supabase
+      .from('jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('type', 'full')
+      .eq('status', 'queued');
+
+    const { count: runningFullJobs } = await supabase
+      .from('jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('type', 'full')
+      .eq('status', 'running');
+
+    const budgetDecision = assessBudgetBreaker({
+      queuedFullJobs: queuedFullJobs ?? 0,
+      runningFullJobs: runningFullJobs ?? 0,
+    });
+
+    if (!budgetDecision.allowed) {
+      return failJson('CONFLICT', budgetDecision.message, {
+        status: budgetDecision.statusCode,
+        headers: budgetDecision.headers,
+      });
     }
 
     if (story.payment_status !== 'paid') {

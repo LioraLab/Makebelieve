@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { getServiceSupabaseClient } from '../../../../lib/supabase/admin';
 import { failJson, okJson } from '../../../../lib/api/response';
+import { checkAbuseControls } from '../../../../lib/ops/abuse-controls';
 import { buildUploadPath, getGuestSessionId } from '../../../../lib/api/request';
 import { parseBody, uploadSignSchema, formatValidationErrors } from '../../../../lib/api/validate';
 import { ZodError } from 'zod';
@@ -9,9 +10,20 @@ export async function POST(req: NextRequest) {
   try {
     const body = parseBody(uploadSignSchema, await req.json());
     const guestSessionId = getGuestSessionId(req);
+    const auth = req.headers.get('authorization');
+    const actorUserId = auth?.startsWith('Bearer user:') ? auth.slice('Bearer user:'.length).trim() : null;
 
-    if (!guestSessionId && !req.headers.get('authorization')) {
+    const actor = actorUserId
+      ? { type: 'user' as const, userId: actorUserId, guestSessionId: null }
+      : { type: 'guest' as const, userId: null, guestSessionId: guestSessionId ?? 'unknown' };
+
+    if (!guestSessionId && !actorUserId) {
       return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
+    }
+
+    const guard = checkAbuseControls(req, actor, { operation: 'upload_sign' });
+    if (!guard.allowed) {
+      return failJson(guard.code, guard.message, guard.status);
     }
 
 

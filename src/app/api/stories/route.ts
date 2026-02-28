@@ -4,9 +4,22 @@ import { ZodError } from 'zod';
 import { getServiceSupabaseClient } from '../../../lib/supabase/admin';
 import { failJson, okJson } from '../../../lib/api/response';
 import { getGuestSessionId } from '../../../lib/api/request';
+import { checkAbuseControls } from '../../../lib/ops/abuse-controls';
 import { createStorySchema, formatValidationErrors, parseBody } from '../../../lib/api/validate';
 
 const STORAGE_BUCKET = process.env.STORY_ASSETS_BUCKET || 'story-uploads';
+
+type StoryActor =
+  | {
+      type: 'user';
+      userId: string;
+      guestSessionId: null;
+    }
+  | {
+      type: 'guest';
+      userId: null;
+      guestSessionId: string;
+    };
 
 function fileNameFromUrl(photoUrl: string, fallbackIndex: number) {
   try {
@@ -20,7 +33,7 @@ function fileNameFromUrl(photoUrl: string, fallbackIndex: number) {
   return `photo-${fallbackIndex + 1}.jpg`;
 }
 
-function resolveActor(req: NextRequest) {
+function resolveActor(req: NextRequest): StoryActor | null {
   const auth = req.headers.get('authorization');
   if (auth?.startsWith('Bearer user:')) {
     const userId = auth.slice('Bearer user:'.length).trim();
@@ -40,12 +53,22 @@ function resolveActor(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const actor = resolveActor(req);
 
+  if (!actor) {
+    return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
+  }
+
+  const actorForGuard = actor as {
+    type: 'user' | 'guest';
+    userId?: string | null;
+    guestSessionId?: string | null;
+  };
+  const guard = checkAbuseControls(req, actorForGuard, { operation: 'story_create' });
+  if (!guard.allowed) {
+    return failJson(guard.code, guard.message, guard.status);
+  }
+
   try {
     const body = parseBody(createStorySchema, await req.json());
-
-    if (!actor) {
-      return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
-    }
 
     const supabase = getServiceSupabaseClient();
 

@@ -4,6 +4,7 @@ import { type NextRequest } from 'next/server';
 import { failJson, okJson } from '../../../../lib/api/response';
 import { getGuestSessionId } from '../../../../lib/api/request';
 import { getServiceSupabaseClient } from '../../../../lib/supabase/admin';
+import { checkAbuseControls } from '../../../../lib/ops/abuse-controls';
 
 type Actor =
   | {
@@ -228,6 +229,11 @@ export async function POST(req: NextRequest) {
   const actor = resolveActor(req);
   if (!actor) {
     return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
+  }
+
+  const guard = checkAbuseControls(req, actor, { operation: 'checkout' });
+  if (!guard.allowed) {
+    return failJson(guard.code, guard.message, guard.status);
   }
 
   try {

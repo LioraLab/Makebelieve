@@ -2,10 +2,11 @@ import { type NextRequest } from 'next/server';
 
 import { getServiceSupabaseClient } from '../../../../../lib/supabase/admin';
 import { failJson, okJson } from '../../../../../lib/api/response';
+import { assessAbuseControls, recordAbuseFailure } from '../../../../../lib/api/abuse';
 import { getGuestSessionId } from '../../../../../lib/api/request';
 
 const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Actor =
   | {
@@ -59,6 +60,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const actor = resolveActor(req);
   if (!actor) {
     return failJson('UNAUTHORIZED', 'guest session id or auth header required', 401);
+  }
+
+  const abuseDecision = assessAbuseControls({
+    req,
+    actorType: actor.type,
+    actorId: actor.type === 'guest' ? actor.guestSessionId : actor.userId,
+    operation: 'preview',
+  });
+
+  if (!abuseDecision.allowed) {
+    return failJson('CONFLICT', abuseDecision.message, {
+      status: abuseDecision.statusCode,
+      headers: abuseDecision.headers,
+    });
   }
 
   const storyId = params.id;
@@ -146,6 +161,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       previewPages,
     });
   } catch {
+    recordAbuseFailure({
+      req,
+      actorType: actor.type,
+      operation: 'preview',
+    });
+
     return failJson('INTERNAL_ERROR', 'Unexpected server error', 500);
   }
 }

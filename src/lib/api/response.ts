@@ -16,12 +16,24 @@ export function okJson<T>(data: T, init?: ResponseInit) {
   return NextResponse.json<ApiOk<T>>({ ok: true, data }, init);
 }
 
-export function failJson(code: ApiErrorCode, message: string, status = 400) {
+type FailJsonInit = number | (ResponseInit & { status?: number });
+
+export function failJson(code: ApiErrorCode, message: string, init: FailJsonInit = 400) {
+  if (typeof init === 'number') {
+    return NextResponse.json<ApiErr>(
+      {
+        ok: false,
+        error: { code, message },
+      },
+      { status: init },
+    );
+  }
+
   return NextResponse.json<ApiErr>(
     {
       ok: false,
       error: { code, message },
     },
-    { status },
+    { status: init.status ?? 400, ...init },
   );
 }
