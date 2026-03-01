@@ -126,10 +126,14 @@ export async function POST(req: NextRequest) {
     }
 
     return okJson({ storyId });
-  } catch (err) {
-    const error = err instanceof ZodError
-      ? `Invalid request: ${formatValidationErrors(err)}`
-      : 'Unexpected server error';
+} catch (err) {
+    console.error('[api/stories][POST]', err);
+    const error =
+      err instanceof ZodError
+        ? `Invalid request: ${formatValidationErrors(err)}`
+        : err instanceof Error
+          ? err.message
+          : 'Unexpected server error';
 
     const code = err instanceof ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     const status = err instanceof ZodError ? 400 : 500;
@@ -175,7 +179,9 @@ export async function GET(req: NextRequest) {
     }
 
     return okJson({ stories: data ?? [] });
-  } catch {
-    return failJson('INTERNAL_ERROR', 'Unexpected server error', 500);
+  } catch (err) {
+    console.error('[api/stories][GET]', err);
+    const message = err instanceof Error ? err.message : 'Unexpected server error';
+    return failJson('INTERNAL_ERROR', message, 500);
   }
 }
